@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Mobile Page Editor Lite
 // @namespace    https://github.com/CRZX1337/mobile-page-editor-lite
-// @version      1.4.0
-// @description  Edit text, numbers, visibility — Liquid Glass UI, undo counter, smart number picker, sticky changes.
+// @version      1.5.0
+// @description  Edit text, numbers, visibility — Liquid Glass UI, undo counter, smart number picker, sticky changes, screenshot mode.
 // @author       CRZX1337
 // @match        *://*/*
 // @run-at       document-end
@@ -99,6 +99,7 @@
       display: none; align-items: center; justify-content: center;
       padding: 0 5px; pointer-events: none;
       box-shadow: 0 2px 6px rgba(255,59,48,0.55);
+      z-index: 1;
     }
 
     /* ─── Root panel ─── */
@@ -153,7 +154,7 @@
       backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1),
                   background 0.18s ease, box-shadow 0.18s ease;
-      overflow: hidden;
+      /* NO overflow:hidden here — would clip the badge */
     }
     .mpe-btn::before {
       content: '';
@@ -183,14 +184,16 @@
         0 0 16px rgba(48,209,88,0.38);
       color: #fff;
     }
+    /* Badge sits OUTSIDE the button clip area — needs z-index to appear on top */
     .mpe-btn-badge {
-      position: absolute; top: -5px; right: -5px;
-      min-width: 18px; height: 18px; border-radius: 999px;
+      position: absolute; top: -7px; right: -7px;
+      min-width: 20px; height: 20px; border-radius: 999px;
       background: #ff3b30; color: #fff;
-      font-size: 10px; font-weight: 800;
+      font-size: 11px; font-weight: 800;
       display: flex; align-items: center; justify-content: center;
-      padding: 0 4px; pointer-events: none;
-      box-shadow: 0 2px 5px rgba(255,59,48,0.5);
+      padding: 0 5px; pointer-events: none;
+      box-shadow: 0 2px 6px rgba(255,59,48,0.55);
+      z-index: 10;
     }
 
     /* ─── History section ─── */
@@ -282,6 +285,25 @@
       border-radius: 4px !important;
     }
     .mpe-hidden-by-script { display: none !important; }
+
+    /* ─── Screenshot countdown toast ─── */
+    #mpe-screenshot-toast {
+      position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 2147483649;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 999px;
+      color: #fff; font-size: 14px; font-weight: 700;
+      padding: 9px 22px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      white-space: nowrap;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+    #mpe-screenshot-toast.visible { opacity: 1; }
   `}));
 
   // ── Launcher ──────────────────────────────────────────────────────────────
@@ -300,6 +322,11 @@
   launcherWrap.appendChild(launcher);
   document.body.appendChild(launcherWrap);
 
+  // ── Screenshot toast ──────────────────────────────────────────────────────
+  const screenshotToast = document.createElement('div');
+  screenshotToast.id = 'mpe-screenshot-toast';
+  document.body.appendChild(screenshotToast);
+
   // ── Panel ─────────────────────────────────────────────────────────────────
   const root = document.createElement('div');
   root.id = 'mpe-lite-root';
@@ -315,7 +342,7 @@
       <div id="mpe-lite-toolbar-2">
         <button class="mpe-btn" data-action="undo">Undo</button>
         <button class="mpe-btn" data-action="reset">Reset</button>
-        <button class="mpe-btn" data-action="clear-sticky">Clear</button>
+        <button class="mpe-btn" data-action="screenshot">📷 Shot</button>
         <button class="mpe-btn" data-action="close">Close</button>
       </div>
       <div id="mpe-lite-history">
@@ -422,7 +449,12 @@
     const n = state.history.length;
     badge.textContent = n; badge.style.display = n>0 ? 'flex' : 'none';
     const old = undoBtn.querySelector('.mpe-btn-badge'); if(old) old.remove();
-    if (n>0) { const b=document.createElement('div'); b.className='mpe-btn-badge'; b.textContent=n; undoBtn.appendChild(b); }
+    if (n>0) {
+      const b=document.createElement('div');
+      b.className='mpe-btn-badge';
+      b.textContent=n;
+      undoBtn.appendChild(b);
+    }
     stickyBtn.classList.toggle('sticky-on', state.stickyOn);
     stickyBtn.textContent = state.stickyOn ? '📌 Sticky ON' : '📌 Sticky';
   }
@@ -502,6 +534,41 @@
     setTimeout(()=>setMode(state.mode),2200);
   }
 
+  // ── Screenshot (hide UI for 10 s) ─────────────────────────────────────────
+  let screenshotTimer = null;
+  function doScreenshot() {
+    if (screenshotTimer) return; // already counting down
+
+    // Hide all editor UI
+    root.style.display = 'none';
+    launcherWrap.style.display = 'none';
+    screenshotToast.style.display = 'block';
+
+    let remaining = 10;
+
+    function showToast(msg) {
+      screenshotToast.textContent = msg;
+      screenshotToast.classList.add('visible');
+    }
+    showToast(`📷 UI hidden — ${remaining}s`);
+
+    screenshotTimer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(screenshotTimer);
+        screenshotTimer = null;
+        screenshotToast.classList.remove('visible');
+        setTimeout(() => {
+          screenshotToast.style.display = 'none';
+          launcherWrap.style.display = 'block';
+          if (state.uiVisible) root.style.display = 'block';
+        }, 280);
+      } else {
+        showToast(`📷 UI hidden — ${remaining}s`);
+      }
+    }, 1000);
+  }
+
   // ── UI mode ───────────────────────────────────────────────────────────────
   function setMode(mode) {
     state.mode=mode; state.active=!!mode;
@@ -529,11 +596,11 @@
     const btn=e.target.closest('.mpe-btn'); if(!btn) return;
     const {mode,action}=btn.dataset;
     if(mode) { setMode(state.mode===mode?null:mode); return; }
-    if(action==='undo')         undoLast();
-    if(action==='reset')        resetAll();
-    if(action==='sticky')       toggleSticky();
-    if(action==='clear-sticky') clearSticky();
-    if(action==='close')        closeUI();
+    if(action==='undo')       undoLast();
+    if(action==='reset')      resetAll();
+    if(action==='sticky')     toggleSticky();
+    if(action==='screenshot') doScreenshot();
+    if(action==='close')      closeUI();
   });
 
   document.addEventListener('pointermove', e=>{
