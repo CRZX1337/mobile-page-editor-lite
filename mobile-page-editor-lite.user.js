@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mobile Page Editor Lite
 // @namespace    https://github.com/CRZX1337/mobile-page-editor-lite
-// @version      1.5.0
+// @version      1.5.1
 // @description  Edit text, numbers, visibility — Liquid Glass UI, undo counter, smart number picker, sticky changes, screenshot mode.
 // @author       CRZX1337
 // @match        *://*/*
@@ -30,7 +30,7 @@
   function stickyClear() { try { sessionStorage.removeItem(STICKY_KEY); } catch {} }
 
   // ── State ─────────────────────────────────────────────────────────────────
-  const state = { active: false, mode: null, hoveredEl: null, history: [], maxHistory: 20, uiVisible: false, stickyOn: stickyEnabled() };
+  const state = { active: false, mode: null, hoveredEl: null, history: [], maxHistory: 20, uiVisible: false, stickyOn: stickyEnabled(), screenshotMode: false };
 
   const selectorsBlocked = [
     '#mpe-lite-root','#mpe-lite-root *','#mpe-lite-launcher-wrap','#mpe-lite-launcher-wrap *',
@@ -154,7 +154,7 @@
       backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1),
                   background 0.18s ease, box-shadow 0.18s ease;
-      /* NO overflow:hidden here — would clip the badge */
+      /* NO overflow:hidden — would clip the badge */
     }
     .mpe-btn::before {
       content: '';
@@ -184,7 +184,6 @@
         0 0 16px rgba(48,209,88,0.38);
       color: #fff;
     }
-    /* Badge sits OUTSIDE the button clip area — needs z-index to appear on top */
     .mpe-btn-badge {
       position: absolute; top: -7px; right: -7px;
       min-width: 20px; height: 20px; border-radius: 999px;
@@ -285,25 +284,6 @@
       border-radius: 4px !important;
     }
     .mpe-hidden-by-script { display: none !important; }
-
-    /* ─── Screenshot countdown toast ─── */
-    #mpe-screenshot-toast {
-      position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
-      z-index: 2147483649;
-      background: rgba(0,0,0,0.72);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,255,255,0.18);
-      border-radius: 999px;
-      color: #fff; font-size: 14px; font-weight: 700;
-      padding: 9px 22px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.25s ease;
-      white-space: nowrap;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    }
-    #mpe-screenshot-toast.visible { opacity: 1; }
   `}));
 
   // ── Launcher ──────────────────────────────────────────────────────────────
@@ -321,11 +301,6 @@
   launcher.appendChild(badge);
   launcherWrap.appendChild(launcher);
   document.body.appendChild(launcherWrap);
-
-  // ── Screenshot toast ──────────────────────────────────────────────────────
-  const screenshotToast = document.createElement('div');
-  screenshotToast.id = 'mpe-screenshot-toast';
-  document.body.appendChild(screenshotToast);
 
   // ── Panel ─────────────────────────────────────────────────────────────────
   const root = document.createElement('div');
@@ -528,45 +503,28 @@
     if(!state.stickyOn) stickyClear(); else stickySave(state.history);
     renderHistory();
   }
-  function clearSticky() {
-    stickyClear();
-    tipEl.textContent='Sticky cleared — changes still active this session.';
-    setTimeout(()=>setMode(state.mode),2200);
-  }
 
-  // ── Screenshot (hide UI for 10 s) ─────────────────────────────────────────
-  let screenshotTimer = null;
+  // ── Screenshot ────────────────────────────────────────────────────────────
+  // Hides ALL editor UI instantly. Next tap anywhere on the page restores it.
   function doScreenshot() {
-    if (screenshotTimer) return; // already counting down
-
-    // Hide all editor UI
+    if (state.screenshotMode) return;
+    state.screenshotMode = true;
     root.style.display = 'none';
     launcherWrap.style.display = 'none';
-    screenshotToast.style.display = 'block';
+    clearHighlight();
 
-    let remaining = 10;
-
-    function showToast(msg) {
-      screenshotToast.textContent = msg;
-      screenshotToast.classList.add('visible');
+    // One-shot tap listener — restore UI on next touch/click anywhere
+    function restoreUI(e) {
+      e.stopPropagation();
+      state.screenshotMode = false;
+      launcherWrap.style.display = 'block';
+      if (state.uiVisible) root.style.display = 'block';
+      document.removeEventListener('pointerdown', restoreUI, { capture: true });
     }
-    showToast(`📷 UI hidden — ${remaining}s`);
-
-    screenshotTimer = setInterval(() => {
-      remaining--;
-      if (remaining <= 0) {
-        clearInterval(screenshotTimer);
-        screenshotTimer = null;
-        screenshotToast.classList.remove('visible');
-        setTimeout(() => {
-          screenshotToast.style.display = 'none';
-          launcherWrap.style.display = 'block';
-          if (state.uiVisible) root.style.display = 'block';
-        }, 280);
-      } else {
-        showToast(`📷 UI hidden — ${remaining}s`);
-      }
-    }, 1000);
+    // Small delay so the tap that triggered doScreenshot doesn’t immediately restore
+    setTimeout(() => {
+      document.addEventListener('pointerdown', restoreUI, { capture: true, once: true });
+    }, 400);
   }
 
   // ── UI mode ───────────────────────────────────────────────────────────────
@@ -582,7 +540,6 @@
   function closeUI() { clearHighlight(); setMode(null); state.uiVisible=false; root.style.display='none'; }
   function openUI()  {
     root.style.display='block';
-    // re-trigger animation
     const p=root.querySelector('#mpe-lite-panel');
     p.style.animation='none'; p.offsetHeight; p.style.animation='';
     state.uiVisible=true;
