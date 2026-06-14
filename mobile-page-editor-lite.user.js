@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mobile Page Editor Lite
 // @namespace    https://github.com/CRZX1337/mobile-page-editor-lite
-// @version      1.5.1
+// @version      1.5.2
 // @description  Edit text, numbers, visibility — Liquid Glass UI, undo counter, smart number picker, sticky changes, screenshot mode.
 // @author       CRZX1337
 // @match        *://*/*
@@ -28,6 +28,34 @@
   }
   function stickyLoad() { try { return JSON.parse(sessionStorage.getItem(STICKY_KEY) || '[]'); } catch { return []; } }
   function stickyClear() { try { sessionStorage.removeItem(STICKY_KEY); } catch {} }
+
+  // ── Auto Light/Dark Detection ─────────────────────────────────────────────
+  function getPageLuminance() {
+    try {
+      const bg = getComputedStyle(document.body).backgroundColor;
+      const m = bg.match(/[\d.]+/g);
+      if (!m || m.length < 3) return 255;
+      const [r, g, b] = m.map(Number);
+      // if fully transparent (alpha=0), check html element
+      if (m[4] !== undefined && parseFloat(m[3]) === 0) {
+        const bg2 = getComputedStyle(document.documentElement).backgroundColor;
+        const m2 = bg2.match(/[\d.]+/g);
+        if (m2 && m2.length >= 3) return (m2[0]*299 + m2[1]*587 + m2[2]*114) / 1000;
+      }
+      return (r*299 + g*587 + b*114) / 1000;
+    } catch { return 255; }
+  }
+
+  function applyTheme() {
+    const lum = getPageLuminance();
+    const isDark = lum < 100;
+    const panel = document.getElementById('mpe-lite-panel');
+    const picker = document.getElementById('mpe-num-picker');
+    const launcherEl = document.getElementById('mpe-lite-launcher');
+    if (panel)    panel.setAttribute('data-mpe-theme', isDark ? 'dark' : 'light');
+    if (picker)   picker.setAttribute('data-mpe-theme', isDark ? 'dark' : 'light');
+    if (launcherEl) launcherEl.setAttribute('data-mpe-theme', isDark ? 'dark' : 'light');
+  }
 
   // ── State ─────────────────────────────────────────────────────────────────
   const state = { active: false, mode: null, hoveredEl: null, history: [], maxHistory: 20, uiVisible: false, stickyOn: stickyEnabled(), screenshotMode: false };
@@ -68,22 +96,37 @@
     }
     #mpe-lite-launcher {
       width: 58px; height: 58px; border-radius: 999px;
-      background: rgba(255,255,255,0.13);
       backdrop-filter: blur(32px) saturate(180%);
       -webkit-backdrop-filter: blur(32px) saturate(180%);
-      border: 1px solid rgba(255,255,255,0.32);
-      box-shadow:
-        0 2px 0 0 rgba(255,255,255,0.28) inset,
-        0 -1px 0 0 rgba(0,0,0,0.18) inset,
-        0 12px 40px rgba(0,0,0,0.36),
-        0 2px 8px rgba(0,0,0,0.22);
-      color: #fff; font-size: 26px;
+      font-size: 26px;
       filter: url(#mpe-liquid);
       cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       position: relative;
       transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.22s ease;
       -webkit-user-select: none; user-select: none;
+    }
+    /* DARK launcher */
+    #mpe-lite-launcher[data-mpe-theme="dark"] {
+      background: rgba(255,255,255,0.13);
+      border: 1px solid rgba(255,255,255,0.32);
+      box-shadow:
+        0 2px 0 0 rgba(255,255,255,0.28) inset,
+        0 -1px 0 0 rgba(0,0,0,0.18) inset,
+        0 12px 40px rgba(0,0,0,0.36),
+        0 2px 8px rgba(0,0,0,0.22);
+      color: #fff;
+    }
+    /* LIGHT launcher */
+    #mpe-lite-launcher[data-mpe-theme="light"] {
+      background: rgba(30,30,35,0.82);
+      border: 1px solid rgba(255,255,255,0.18);
+      box-shadow:
+        0 2px 0 0 rgba(255,255,255,0.12) inset,
+        0 -1px 0 0 rgba(0,0,0,0.28) inset,
+        0 12px 40px rgba(0,0,0,0.28),
+        0 2px 8px rgba(0,0,0,0.18);
+      color: #fff;
     }
     #mpe-lite-launcher:active {
       transform: scale(0.91);
@@ -111,10 +154,16 @@
     }
     #mpe-lite-panel {
       pointer-events: auto;
-      background: rgba(255,255,255,0.11);
       backdrop-filter: blur(40px) saturate(200%) brightness(1.08);
       -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.08);
       border-radius: 26px;
+      filter: url(#mpe-liquid);
+      overflow: hidden;
+      animation: mpe-panel-in 0.32s cubic-bezier(0.34,1.46,0.64,1) both;
+    }
+    /* DARK panel */
+    #mpe-lite-panel[data-mpe-theme="dark"] {
+      background: rgba(255,255,255,0.11);
       border: 1px solid rgba(255,255,255,0.28);
       box-shadow:
         0 2px 0 0 rgba(255,255,255,0.30) inset,
@@ -122,9 +171,19 @@
         0 0 0 0.5px rgba(255,255,255,0.10) inset,
         0 20px 60px rgba(0,0,0,0.38),
         0 4px 16px rgba(0,0,0,0.20);
-      filter: url(#mpe-liquid);
-      overflow: hidden;
-      animation: mpe-panel-in 0.32s cubic-bezier(0.34,1.46,0.64,1) both;
+      color: #fff;
+    }
+    /* LIGHT panel */
+    #mpe-lite-panel[data-mpe-theme="light"] {
+      background: rgba(20,20,24,0.86);
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow:
+        0 2px 0 0 rgba(255,255,255,0.12) inset,
+        0 -1px 0 0 rgba(0,0,0,0.30) inset,
+        0 0 0 0.5px rgba(255,255,255,0.06) inset,
+        0 20px 60px rgba(0,0,0,0.45),
+        0 4px 16px rgba(0,0,0,0.30);
+      color: #fff;
     }
     @keyframes mpe-panel-in {
       from { opacity: 0; transform: translateY(22px) scale(0.96); }
@@ -155,6 +214,12 @@
       transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1),
                   background 0.18s ease, box-shadow 0.18s ease;
       /* NO overflow:hidden — would clip the badge */
+    }
+    /* Light mode buttons get slightly more opaque bg so text is always readable */
+    #mpe-lite-panel[data-mpe-theme="light"] .mpe-btn {
+      background: rgba(255,255,255,0.13);
+      border-color: rgba(255,255,255,0.22);
+      color: #fff;
     }
     .mpe-btn::before {
       content: '';
@@ -233,18 +298,31 @@
     #mpe-num-picker {
       position: fixed; left: 10px; right: 10px; bottom: 0;
       z-index: 2147483648;
-      background: rgba(255,255,255,0.12);
       backdrop-filter: blur(44px) saturate(200%);
       -webkit-backdrop-filter: blur(44px) saturate(200%);
-      border: 1px solid rgba(255,255,255,0.26);
       border-radius: 24px 24px 0 0;
-      box-shadow:
-        0 2px 0 0 rgba(255,255,255,0.28) inset,
-        0 -20px 60px rgba(0,0,0,0.3);
       padding: 16px 16px 36px;
       filter: url(#mpe-liquid-strong);
       transform: translateY(110%);
       transition: transform 0.3s cubic-bezier(0.32,1,0.23,1);
+    }
+    /* DARK picker */
+    #mpe-num-picker[data-mpe-theme="dark"] {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.26);
+      box-shadow:
+        0 2px 0 0 rgba(255,255,255,0.28) inset,
+        0 -20px 60px rgba(0,0,0,0.3);
+      color: #fff;
+    }
+    /* LIGHT picker */
+    #mpe-num-picker[data-mpe-theme="light"] {
+      background: rgba(20,20,24,0.90);
+      border: 1px solid rgba(255,255,255,0.18);
+      box-shadow:
+        0 2px 0 0 rgba(255,255,255,0.10) inset,
+        0 -20px 60px rgba(0,0,0,0.45);
+      color: #fff;
     }
     #mpe-num-picker.open { transform: translateY(0); }
     #mpe-num-picker-title {
@@ -521,7 +599,7 @@
       if (state.uiVisible) root.style.display = 'block';
       document.removeEventListener('pointerdown', restoreUI, { capture: true });
     }
-    // Small delay so the tap that triggered doScreenshot doesn’t immediately restore
+    // Small delay so the tap that triggered doScreenshot doesn't immediately restore
     setTimeout(() => {
       document.addEventListener('pointerdown', restoreUI, { capture: true, once: true });
     }, 400);
@@ -540,6 +618,7 @@
   function closeUI() { clearHighlight(); setMode(null); state.uiVisible=false; root.style.display='none'; }
   function openUI()  {
     root.style.display='block';
+    applyTheme(); // re-check theme every time panel opens
     const p=root.querySelector('#mpe-lite-panel');
     p.style.animation='none'; p.offsetHeight; p.style.animation='';
     state.uiVisible=true;
@@ -580,6 +659,8 @@
   }, true);
 
   // ── Init ──────────────────────────────────────────────────────────────────
+  applyTheme(); // initial theme check
+
   if (state.stickyOn) {
     const saved=stickyLoad();
     if(saved.length){
